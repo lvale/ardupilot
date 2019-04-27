@@ -71,7 +71,7 @@ void Copter::ModeCircle::run()
     }
 
     // update altitude target and call position controller
-    // protects heli's from inflight motor interlock disable
+    // protects heli's from inflight Throttle Hold engaged
     if (motors->get_desired_spool_state() == AP_Motors::DesiredSpoolState::GROUND_IDLE && !ap.land_complete) {
         pos_control->set_alt_target_from_climb_rate(-abs(g.land_speed), G_Dt, false);
     } else {

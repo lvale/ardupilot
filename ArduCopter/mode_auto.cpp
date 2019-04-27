@@ -892,7 +892,7 @@ void Copter::ModeAuto::loiter_run()
 //      called by auto_run at 100hz or more
 void Copter::ModeAuto::loiter_to_alt_run()
 {
-    // if not auto armed or motor interlock not enabled set throttle to zero and exit immediately
+    // if not auto armed or Throttle Hold engaged set throttle to zero and exit immediately
     if (is_disarmed_or_landed() || !motors->get_interlock()) {
         zero_throttle_and_relax_ac();
         return;
@@ -1007,7 +1007,7 @@ bool Copter::ModeAuto::payload_place_run_should_run()
     if (ap.land_complete) {
         return false;
     }
-    // interlock must be enabled (i.e. unsafe)
+    // Throttle Hold must be disengaged (i.e. unsafe)
     if (!motors->get_interlock()) {
         return false;
     }

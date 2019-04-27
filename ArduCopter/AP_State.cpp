@@ -81,11 +81,11 @@ void Copter::set_failsafe_gcs(bool b)
 void Copter::update_using_interlock()
 {
 #if FRAME_CONFIG == HELI_FRAME
-    // helicopters are always using motor interlock
+    // helicopters are always using Throttle Hold
     ap.using_interlock = true;
 #else
-    // check if we are using motor interlock control on an aux switch or are in throw mode
-    // which uses the interlock to stop motors while the copter is being thrown
-    ap.using_interlock = rc().find_channel_for_option(RC_Channel::AUX_FUNC::MOTOR_INTERLOCK) != nullptr;
+    // check if we are using Throttle Hold control on an aux switch or are in throw mode
+    // which uses the Throttle Hold to stop motors while the copter is being thrown
+    ap.using_interlock = rc().find_channel_for_option(RC_Channel::AUX_FUNC::THROTTLE_HOLD) != nullptr;
 #endif
 }
