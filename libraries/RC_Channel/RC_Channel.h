@@ -127,7 +127,7 @@ public:
         LANDING_GEAR =        29, // Landing gear controller
         LOST_VEHICLE_SOUND =  30, // Play lost vehicle sound
         MOTOR_ESTOP =         31, // Emergency Stop Switch
-        MOTOR_INTERLOCK =     32, // Motor On/Off switch
+        THROTTLE_HOLD =       32, // Motor On/Off switch
         BRAKE =               33, // Brake flight mode
         RELAY2 =              34, // Relay2 pin on/off
         RELAY3 =              35, // Relay3 pin on/off

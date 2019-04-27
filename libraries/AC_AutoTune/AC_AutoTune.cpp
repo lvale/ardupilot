@@ -345,7 +345,7 @@ void AC_AutoTune::run()
     // initialize vertical speeds and acceleration
     init_z_limits();
 
-    // if not auto armed or motor interlock not enabled set throttle to zero and exit immediately
+    // if not auto armed or Throttle Hold engaged set throttle to zero and exit immediately
     // this should not actually be possible because of the init() checks
     if (!motors->armed() || !motors->get_interlock()) {
         motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);

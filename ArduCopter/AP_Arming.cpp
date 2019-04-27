@@ -32,20 +32,20 @@ bool AP_Arming_Copter::pre_arm_checks(bool display_failure)
         return true;
     }
 
-    // check if motor interlock and Emergency Stop aux switches are used
+    // check if Throttle Hold and Emergency Stop aux switches are used
     // at the same time.  This cannot be allowed.
-    if (rc().find_channel_for_option(RC_Channel::AUX_FUNC::MOTOR_INTERLOCK) &&
+    if (rc().find_channel_for_option(RC_Channel::AUX_FUNC::THROTTLE_HOLD) &&
         rc().find_channel_for_option(RC_Channel::AUX_FUNC::MOTOR_ESTOP)){
-        check_failed(ARMING_CHECK_NONE, display_failure, "Interlock/E-Stop Conflict");
+        check_failed(ARMING_CHECK_NONE, display_failure, "Throttle Hold/E-Stop Conflict");
         return false;
     }
 
-    // check if motor interlock aux switch is in use
-    // if it is, switch needs to be in disabled position to arm
+    // check if Throttle Hold aux switch is in use
+    // if it is, switch needs to be in disengaged position to arm
     // otherwise exit immediately.  This check to be repeated,
     // as state can change at any time.
     if (copter.ap.using_interlock && copter.ap.motor_interlock_switch) {
-        check_failed(ARMING_CHECK_NONE, display_failure, "Motor Interlock Enabled");
+        check_failed(ARMING_CHECK_NONE, display_failure, "Throttle Hold Engaged");
     }
 
     // succeed if pre arm checks are disabled
@@ -184,9 +184,9 @@ bool AP_Arming_Copter::parameter_checks(bool display_failure)
             check_failed(ARMING_CHECK_PARAMETERS, display_failure, "Inverted flight option not supported");
             return false;
         }
-        // Ensure an Aux Channel is configured for motor interlock
-        if (rc().find_channel_for_option(RC_Channel::aux_func_t::MOTOR_INTERLOCK) == nullptr) {
-            check_failed(ARMING_CHECK_PARAMETERS, display_failure, "Motor Interlock not configured");
+        // Ensure an Aux Channel is configured for Throttle Hold
+        if (rc().find_channel_for_option(RC_Channel::aux_func_t::THROTTLE_HOLD) == nullptr) {
+            check_failed(ARMING_CHECK_PARAMETERS, display_failure, "Throttle Hold not configured");
             return false;
         }
 
@@ -471,10 +471,10 @@ bool AP_Arming_Copter::arm_checks(bool display_failure, AP_Arming::Method method
         return false;
     }
 
-    // if we are using motor interlock switch and it's enabled, fail to arm
-    // skip check in Throw mode which takes control of the motor interlock
+    // if we are using Throttle Hold switch and it's disengaged, fail to arm
+    // skip check in Throw mode which takes control of the Throttle Hold
     if (copter.ap.using_interlock && copter.ap.motor_interlock_switch) {
-        check_failed(ARMING_CHECK_NONE, display_failure, "Motor Interlock Enabled");
+        check_failed(ARMING_CHECK_NONE, display_failure, "Throttle Hold Disengaged");
         return false;
     }
 
