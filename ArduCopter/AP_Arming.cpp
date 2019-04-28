@@ -41,7 +41,7 @@ bool AP_Arming_Copter::pre_arm_checks(bool display_failure)
     }
 
     // check if Throttle Hold aux switch is in use
-    // if it is, switch needs to be in disabled position to arm
+    // if it is, switch needs to be in disengaged position to arm
     // otherwise exit immediately.  This check to be repeated,
     // as state can change at any time.
     if (copter.ap.using_interlock && copter.ap.motor_interlock_switch) {
@@ -471,10 +471,10 @@ bool AP_Arming_Copter::arm_checks(bool display_failure, AP_Arming::Method method
         return false;
     }
 
-    // if we are using Throttle Hold switch and it's engaged, fail to arm
+    // if we are using Throttle Hold switch and it's disengaged, fail to arm
     // skip check in Throw mode which takes control of the Throttle Hold
     if (copter.ap.using_interlock && copter.ap.motor_interlock_switch) {
-        check_failed(ARMING_CHECK_NONE, display_failure, "Throttle Hold Engaged");
+        check_failed(ARMING_CHECK_NONE, display_failure, "Throttle Hold Disengaged");
         return false;
     }
 
