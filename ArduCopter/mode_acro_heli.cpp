@@ -38,7 +38,7 @@ void Copter::ModeAcro_Heli::run()
         // Motors should be Stopped
         motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::SHUT_DOWN);
     } else {
-        // heli will not let the spool state progress to THROTTLE_UNLIMITED until motor interlock is enabled
+        // heli will not let the spool state progress to THROTTLE_UNLIMITED until Throttle Hold is disengaged
         motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     }
 

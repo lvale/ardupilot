@@ -2187,20 +2187,20 @@ class AutoTest(ABC):
             self.set_parameter("ARMING_RUDDER", 2)
 
             if self.is_copter():
-                self.start_subtest("Test arming failure with interlock enabled")
+                self.start_subtest("Test arming failure with Throttle Hold disengaged")
                 self.set_rc(interlock_channel, 2000)
                 if self.arm_motors_with_rc_input():
                     raise NotAchievedException(
-                        "Armed with RC input when interlock enabled")
+                        "Armed with RC input when Throttle Hold disengaged")
                 if self.arm_motors_with_switch(arming_switch):
                     raise NotAchievedException(
-                        "Armed with switch when interlock enabled")
+                        "Armed with switch when Throttle Hold disengaged")
                 self.disarm_vehicle()
                 self.wait_heartbeat()
                 self.set_rc(arming_switch, 1000)
                 self.set_rc(interlock_channel, 1000)
                 if self.is_heli():
-                    self.start_subtest("Test motor interlock enable can't be set while disarmed")
+                    self.start_subtest("Test Throttle Hold disengaged can't be set while disarmed")
                     self.set_rc(interlock_channel, 2000)
                     channel_field = "servo%u_raw" % interlock_channel
                     interlock_value = self.get_parameter("SERVO%u_MIN" % interlock_channel)
@@ -2223,7 +2223,7 @@ class AutoTest(ABC):
                                       (channel_field, m_value, interlock_value))
                         if m_value != interlock_value:
                             self.set_rc(interlock_channel, 1000)
-                            raise NotAchievedException("Motor interlock was changed while disarmed")
+                            raise NotAchievedException("Throttle Hold was changed while disarmed")
                 self.set_rc(interlock_channel, 1000)
         self.progress("ALL PASS")
         # TODO : add failure test : arming check, wrong mode; Test arming magic; Same for disarm

@@ -73,10 +73,10 @@ public:
     bool                armed() const { return _flags.armed; }
     void                armed(bool arm);
 
-    // set motor interlock status
+    // set Throttle Hold status
     void                set_interlock(bool set) { _flags.interlock = set;}
 
-    // get motor interlock status.  true means motors run, false motors don't run
+    // get Throttle Hold status.  true means motors run, false motors don't run //logic is reversed for historical reasons
     bool                get_interlock() const { return _flags.interlock; }
 
     // set_roll, set_pitch, set_yaw, set_throttle
@@ -206,7 +206,7 @@ protected:
     // flag bitmask
     struct AP_Motors_flags {
         uint8_t armed              : 1;    // 0 if disarmed, 1 if armed
-        uint8_t interlock          : 1;    // 1 if the motor interlock is enabled (i.e. motors run), 0 if disabled (motors don't run)
+        uint8_t interlock          : 1;    // 1 if the Throttle Hold is disengaged (i.e. motors run), 0 if engaged (motors don't run)
         uint8_t initialised_ok     : 1;    // 1 if initialisation was successful
     } _flags;
 
