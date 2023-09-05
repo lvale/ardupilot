@@ -3,38 +3,14 @@
 // mission storage
 static const StorageAccess wp_storage(StorageManager::StorageMission);
 
-static void mavlink_delay_cb_static()
+void Tracker::init_ardupilot()
 {
-    tracker.mavlink_delay_cb();
-}
-
-void Tracker::init_tracker()
-{
-    // initialise console serial port
-    serial_manager.init_console();
-
-    hal.console->printf("\n\nInit %s\n\nFree RAM: %u\n",
-                        AP::fwversion().fw_string,
-                        (unsigned)hal.util->available_memory());
-
-    // Check the EEPROM format version before loading any parameters from EEPROM
-    load_parameters();
-
-    mavlink_system.sysid = g.sysid_this_mav;
-
-    // initialise serial ports
-    serial_manager.init();
-
-    // setup first port early to allow BoardConfig to report errors
-    gcs().chan(0).setup_uart(serial_manager, AP_SerialManager::SerialProtocol_MAVLink, 0);
-
-    // Register mavlink_delay_cb, which will run anytime you have
-    // more than 5ms remaining in your call to hal.scheduler->delay
-    hal.scheduler->register_delay_callback(mavlink_delay_cb_static, 5);
+    // initialise stats module
+    stats.init();
 
     BoardConfig.init();
-#if HAL_WITH_UAVCAN
-    BoardConfig_CAN.init();
+#if HAL_MAX_CAN_PROTOCOL_DRIVERS
+    can_mgr.init();
 #endif
 
     // initialise notify
@@ -50,17 +26,19 @@ void Tracker::init_tracker()
     barometer.init();
 
     // setup telem slots with serial ports
-    gcs().setup_uarts(serial_manager);
+    gcs().setup_uarts();
+    // update_send so that if the first packet we receive happens to
+    // be an arm message we don't trigger an internal error when we
+    // try to initialise stream rates in the main loop.
+    gcs().update_send();
 
 #if LOGGING_ENABLED == ENABLED
     log_init();
 #endif
 
-#ifdef ENABLE_SCRIPTING
-    if (!scripting.init()) {
-        gcs().send_text(MAV_SEVERITY_ERROR, "Scripting failed to start");
-    }
-#endif // ENABLE_SCRIPTING
+#if AP_SCRIPTING_ENABLED
+    scripting.init();
+#endif // AP_SCRIPTING_ENABLED
 
     // initialise compass
     AP::compass().set_log_bit(MASK_LOG_COMPASS);
@@ -81,8 +59,9 @@ void Tracker::init_tracker()
     // initialise AP_Logger library
     logger.setVehicle_Startup_Writer(FUNCTOR_BIND(&tracker, &Tracker::Log_Write_Vehicle_Startup_Messages, void));
 
-    // set serial ports non-blocking
-    serial_manager.set_blocking_writes_all(false);
+    // initialise rc channels including setting mode
+    rc().convert_options(RC_Channel::AUX_FUNC::ARMDISARM_UNUSED, RC_Channel::AUX_FUNC::ARMDISARM);
+    rc().init();
 
     // initialise servos
     init_servos();
@@ -102,42 +81,25 @@ void Tracker::init_tracker()
         get_home_eeprom(current_loc);
     }
 
-    gcs().send_text(MAV_SEVERITY_INFO,"Ready to track");
     hal.scheduler->delay(1000); // Why????
 
-    switch (g.initial_mode) {
-    case MANUAL:
-        set_mode(MANUAL, MODE_REASON_STARTUP);
-        break;
-
-    case SCAN:
-        set_mode(SCAN, MODE_REASON_STARTUP);
-        break;
-
-    case STOP:
-        set_mode(STOP, MODE_REASON_STARTUP);
-        break;
-
-    case AUTO:
-    default:
-        set_mode(AUTO, MODE_REASON_STARTUP);
-        break;
+    Mode *newmode = mode_from_mode_num((Mode::Number)g.initial_mode.get());
+    if (newmode == nullptr) {
+        newmode = &mode_manual;
     }
+    set_mode(*newmode, ModeReason::STARTUP);
 
     if (g.startup_delay > 0) {
         // arm servos with trim value to allow them to start up (required
         // for some servos)
         prepare_servos();
     }
-
-    // disable safety if requested
-    BoardConfig.init_safety();    
 }
 
 /*
   fetch HOME from EEPROM
 */
-bool Tracker::get_home_eeprom(struct Location &loc)
+bool Tracker::get_home_eeprom(Location &loc) const
 {
     // Find out proper location in memory by using the start_byte position + the index
     // --------------------------------------------------------------------------------
@@ -205,38 +167,65 @@ void Tracker::disarm_servos()
 void Tracker::prepare_servos()
 {
     start_time_ms = AP_HAL::millis();
-    SRV_Channels::set_output_limit(SRV_Channel::k_tracker_yaw, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
-    SRV_Channels::set_output_limit(SRV_Channel::k_tracker_pitch, SRV_Channel::SRV_CHANNEL_LIMIT_TRIM);
+    SRV_Channels::set_output_limit(SRV_Channel::k_tracker_yaw, SRV_Channel::Limit::TRIM);
+    SRV_Channels::set_output_limit(SRV_Channel::k_tracker_pitch, SRV_Channel::Limit::TRIM);
     SRV_Channels::calc_pwm();
     SRV_Channels::output_ch_all();
 }
 
-void Tracker::set_mode(enum ControlMode mode, mode_reason_t reason)
+void Tracker::set_mode(Mode &newmode, const ModeReason reason)
 {
-    if (control_mode == mode) {
+    control_mode_reason = reason;
+
+    if (mode == &newmode) {
         // don't switch modes if we are already in the correct mode.
         return;
     }
-    control_mode = mode;
+    mode = &newmode;
 
-	switch (control_mode) {
-    case AUTO:
-    case MANUAL:
-    case SCAN:
-    case SERVO_TEST:
+    if (mode->requires_armed_servos()) {
         arm_servos();
-        break;
-
-    case STOP:
-    case INITIALISING:
+    } else {
         disarm_servos();
-        break;
     }
 
 	// log mode change
-	logger.Write_Mode(control_mode, reason);
+	logger.Write_Mode((uint8_t)mode->number(), reason);
+    gcs().send_message(MSG_HEARTBEAT);
 
     nav_status.bearing = ahrs.yaw_sensor * 0.01f;
+}
+
+bool Tracker::set_mode(const uint8_t new_mode, const ModeReason reason)
+{
+    Mode *fred = nullptr;
+    switch ((Mode::Number)new_mode) {
+    case Mode::Number::INITIALISING:
+        return false;
+    case Mode::Number::AUTO:
+        fred = &mode_auto;
+        break;
+    case Mode::Number::MANUAL:
+        fred = &mode_manual;
+        break;
+    case Mode::Number::SCAN:
+        fred = &mode_scan;
+        break;
+    case Mode::Number::SERVOTEST:
+        fred = &mode_servotest;
+        break;
+    case Mode::Number::STOP:
+        fred = &mode_stop;
+        break;
+    case Mode::Number::GUIDED:
+        fred = &mode_guided;
+        break;
+    }
+    if (fred == nullptr) {
+        return false;
+    }
+    set_mode(*fred, reason);
+    return true;
 }
 
 /*
@@ -249,3 +238,18 @@ bool Tracker::should_log(uint32_t mask)
     }
     return true;
 }
+
+
+#include <AP_AdvancedFailsafe/AP_AdvancedFailsafe.h>
+#include <AP_Avoidance/AP_Avoidance.h>
+#include <AP_ADSB/AP_ADSB.h>
+
+#if AP_ADVANCEDFAILSAFE_ENABLED
+// dummy method to avoid linking AFS
+bool AP_AdvancedFailsafe::gcs_terminate(bool should_terminate, const char *reason) {return false;}
+AP_AdvancedFailsafe *AP::advancedfailsafe() { return nullptr; }
+#endif  // AP_ADVANCEDFAILSAFE_ENABLED
+#if HAL_ADSB_ENABLED
+// dummy method to avoid linking AP_Avoidance
+AP_Avoidance *AP::ap_avoidance() { return nullptr; }
+#endif

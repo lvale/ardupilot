@@ -13,10 +13,18 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 /*
-  simulator connection for ardupilot version of JSBSim
+  simulator connection for JSBSim - https://github.com/JSBSim-Team/jsbsim
 */
 
 #pragma once
+
+#include <AP_HAL/AP_HAL_Boards.h>
+
+#ifndef HAL_SIM_JSBSIM_ENABLED
+#define HAL_SIM_JSBSIM_ENABLED (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
+#endif
+
+#if HAL_SIM_JSBSIM_ENABLED
 
 #include <AP_HAL/utility/Socket.h>
 
@@ -29,14 +37,14 @@ namespace SITL {
  */
 class JSBSim : public Aircraft {
 public:
-    JSBSim(const char *home_str, const char *frame_str);
+    JSBSim(const char *frame_str);
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new JSBSim(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return new JSBSim(frame_str);
     }
 
 private:
@@ -74,8 +82,8 @@ private:
     bool open_fdm_socket(void);
     void send_servos(const struct sitl_input &input);
     void recv_fdm(const struct sitl_input &input);
-    void check_stdout(void);
-    bool expect(const char *str);
+    void check_stdout(void) const;
+    bool expect(const char *str) const;
 
     void drain_control_socket();
 };
@@ -155,8 +163,7 @@ public:
     float gear_compression[FG_MAX_WHEELS];
 
     // Environment
-    uint32_t cur_time;           // current unix time
-                                 // FIXME: make this uint64_t before 2038
+    uint32_t cur_time;           // current simulation time of JSBSim
     int32_t warp;                // offset in seconds to unix time
     float visibility;            // visibility in meters (for env. effects)
 
@@ -177,3 +184,5 @@ public:
 };
 
 } // namespace SITL
+
+#endif  // HAL_SIM_JSBSIM_ENABLED

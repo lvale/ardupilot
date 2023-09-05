@@ -9,11 +9,15 @@
  * LOCATION
  */
 
-// return horizontal distance in centimeters between two positions
-float        get_horizontal_distance_cm(const Vector3f &origin, const Vector3f &destination);
+// return horizontal distance between two positions in cm
+template <typename T>
+float get_horizontal_distance_cm(const Vector2<T> &origin, const Vector2<T> &destination)
+{
+    return (destination - origin).length();
+}
 
 // return bearing in centi-degrees between two positions
-float        get_bearing_cd(const Vector3f &origin, const Vector3f &destination);
+float        get_bearing_cd(const Vector2f &origin, const Vector2f &destination);
 
 // Converts from WGS84 geodetic coordinates (lat, lon, height)
 // into WGS84 Earth Centered, Earth Fixed (ECEF) coordinates
@@ -26,9 +30,9 @@ void        wgsllh2ecef(const Vector3d &llh, Vector3d &ecef);
 void        wgsecef2llh(const Vector3d &ecef, Vector3d &llh);
 
 // return true when lat and lng are within range
-bool        check_lat(float lat);
-bool        check_lng(float lng);
-bool        check_lat(int32_t lat);
-bool        check_lng(int32_t lng);
-bool        check_latlng(float lat, float lng);
-bool        check_latlng(int32_t lat, int32_t lng);
+bool        check_lat(float lat) WARN_IF_UNUSED;
+bool        check_lng(float lng) WARN_IF_UNUSED;
+bool        check_lat(int32_t lat) WARN_IF_UNUSED;
+bool        check_lng(int32_t lng) WARN_IF_UNUSED;
+bool        check_latlng(float lat, float lng) WARN_IF_UNUSED;
+bool        check_latlng(int32_t lat, int32_t lng) WARN_IF_UNUSED;

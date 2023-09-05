@@ -18,6 +18,14 @@
 
 #pragma once
 
+#include <AP_HAL/AP_HAL_Boards.h>
+
+#ifndef HAL_SIM_GAZEBO_ENABLED
+#define HAL_SIM_GAZEBO_ENABLED (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
+#endif
+
+#if HAL_SIM_GAZEBO_ENABLED
+
 #include "SIM_Aircraft.h"
 #include <AP_HAL/utility/Socket.h>
 
@@ -28,14 +36,14 @@ namespace SITL {
  */
 class Gazebo : public Aircraft {
 public:
-    Gazebo(const char *home_str, const char *frame_str);
+    Gazebo(const char *frame_str);
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new Gazebo(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return new Gazebo(frame_str);
     }
 
     /*  Create and set in/out socket for Gazebo simulator */
@@ -75,3 +83,6 @@ private:
 };
 
 }  // namespace SITL
+
+
+#endif  // HAL_SIM_GAZEBO_ENABLED

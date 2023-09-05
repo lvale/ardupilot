@@ -14,22 +14,19 @@
  */
 #pragma once
 
-#include <AP_Common/AP_Common.h>
-#include <AP_HAL/AP_HAL.h>
-#include <AP_Logger/AP_Logger.h>
-#include <AP_Common/Location.h>
+#include <AP_HAL/AP_HAL_Boards.h>
+#include <AP_Filesystem/AP_Filesystem_config.h>
 
-#if (HAL_OS_POSIX_IO || HAL_OS_FATFS_IO) && defined(HAL_BOARD_TERRAIN_DIRECTORY)
-#define AP_TERRAIN_AVAILABLE 1
-#else
-#define AP_TERRAIN_AVAILABLE 0
+#ifndef AP_TERRAIN_AVAILABLE
+#define AP_TERRAIN_AVAILABLE AP_FILESYSTEM_FILE_READING_ENABLED
 #endif
 
 #if AP_TERRAIN_AVAILABLE
 
+#include <AP_Common/AP_Common.h>
+#include <AP_Common/Location.h>
 #include <AP_Param/AP_Param.h>
-#include <AP_AHRS/AP_AHRS.h>
-#include <AP_Mission/AP_Mission.h>
+#include <GCS_MAVLink/GCS_MAVLink.h>
 
 #define TERRAIN_DEBUG 0
 
@@ -58,7 +55,13 @@
 // format of grid on disk
 #define TERRAIN_GRID_FORMAT_VERSION 1
 
+// we allow for a 2cm discrepancy in the grid corners. This is to
+// account for different rounding in terrain DAT file generators using
+// different programming languages
+#define TERRAIN_LATLON_EQUAL(v1, v2) (unsigned(labs((v1)-(v2))) <= unsigned(margin.get()*100))
+
 #if TERRAIN_DEBUG
+#include <assert.h>
 #define ASSERT_RANGE(v,minv,maxv) assert((v)<=(maxv)&&(v)>=(minv))
 #else
 #define ASSERT_RANGE(v,minv,maxv)
@@ -76,11 +79,10 @@
 
 class AP_Terrain {
 public:
-    AP_Terrain(const AP_Mission &_mission);
+    AP_Terrain();
 
     /* Do not allow copies */
-    AP_Terrain(const AP_Terrain &other) = delete;
-    AP_Terrain &operator=(const AP_Terrain&) = delete;
+    CLASS_NO_COPY(AP_Terrain);
 
     static AP_Terrain *get_singleton(void) { return singleton; }
 
@@ -96,29 +98,29 @@ public:
     void update(void);
 
     bool enabled() const { return enable; }
+    void set_enabled(bool _enable) { enable.set(_enable); }
 
     // return status enum for health reporting
     enum TerrainStatus status(void) const { return system_status; }
 
+    bool pre_arm_checks(char *failure_msg, uint8_t failure_msg_len) const;
+
     // send any pending terrain request message
+    bool send_cache_request(mavlink_channel_t chan);
     void send_request(mavlink_channel_t chan);
 
     // handle terrain data and reports from GCS
     void send_terrain_report(mavlink_channel_t chan, const Location &loc, bool extrapolate);
-    void handle_data(mavlink_channel_t chan, mavlink_message_t *msg);
-    void handle_terrain_check(mavlink_channel_t chan, mavlink_message_t *msg);
-    void handle_terrain_data(mavlink_message_t *msg);
+    void handle_data(mavlink_channel_t chan, const mavlink_message_t &msg);
+    void handle_terrain_check(mavlink_channel_t chan, const mavlink_message_t &msg);
+    void handle_terrain_data(const mavlink_message_t &msg);
 
     /*
       find the terrain height in meters above sea level for a location
 
       return false if not available
-
-      if corrected is true then terrain alt is adjusted so that
-      the terrain altitude matches the home altitude at the home location
-      (i.e. we assume home is at the terrain altitude)
      */
-    bool height_amsl(const Location &loc, float &height, bool corrected);
+    bool height_amsl(const Location &loc, float &height, bool corrected = true);
 
     /* 
        find difference between home terrain height and the terrain
@@ -154,11 +156,10 @@ public:
                                          bool extrapolate = false);
 
     /* 
-       return current height above terrain at current AHRS
-       position. 
+       return current height above terrain at current AHRS position.
 
        If extrapolate is true then extrapolate from most recently
-       available terrain data is terrain data is not available for the
+       available terrain data if terrain data is not available for the
        current location.
 
        Return true if height is available, otherwise false.
@@ -179,7 +180,18 @@ public:
     /*
       get some statistics for TERRAIN_REPORT
      */
-    void get_statistics(uint16_t &pending, uint16_t &loaded);
+    void get_statistics(uint16_t &pending, uint16_t &loaded) const;
+
+    /*
+      returns true if initialisation failed because out-of-memory
+     */
+    bool init_failed() const { return memory_alloc_failed; }
+
+    /*
+      setup a reference location for terrain adjustment. This should
+      be called when the vehicle is definately on the ground
+     */
+    void set_reference_location(void);
 
 private:
     // allocate the terrain subsystem data
@@ -310,7 +322,7 @@ private:
     /*
       get some statistics for TERRAIN_REPORT
      */
-    uint8_t bitcount64(uint64_t b);
+    uint8_t bitcount64(uint64_t b) const;
 
     /*
       disk IO functions
@@ -322,8 +334,12 @@ private:
     void io_timer(void);
     void open_file(void);
     void seek_offset(void);
+    uint32_t east_blocks(struct grid_block &block) const;
     void write_block(void);
     void read_block(void);
+
+    // check for missing data in squares surrounding loc:
+    bool update_surrounding_tiles(const Location &loc);
 
     /*
       check for missing mission terrain data
@@ -335,14 +351,22 @@ private:
      */
     void update_rally_data(void);
 
+    /*
+      calculate reference offset if needed
+     */
+    void update_reference_offset(void);
+
 
     // parameters
     AP_Int8  enable;
+    AP_Float margin;
     AP_Int16 grid_spacing; // meters between grid points
+    AP_Int16 options; // option bits
+    AP_Float offset_max;
 
-    // reference to AP_Mission, so we can ask preload terrain data for 
-    // all waypoints
-    const AP_Mission &mission;
+    enum class Options {
+        DisableDownload = (1U<<0),
+    };
 
     // cache of grids in memory, LRU
     uint8_t cache_size = 0;
@@ -376,6 +400,7 @@ private:
 
     // do we have an IO failure
     volatile bool io_failure;
+    uint32_t last_retry_ms;
 
     // have we created the terrain directory?
     bool directory_created;
@@ -383,12 +408,26 @@ private:
     // cache the home altitude, as it is needed so often
     float home_height;
     Location home_loc;
+    bool have_home_height;
+
+    // reference position for terrain adjustment, set at arming
+    bool have_reference_loc;
+    Location reference_loc;
+
+    // calculated reference offset
+    bool have_reference_offset;
+    float reference_offset;
+
 
     // cache the last terrain height (AMSL) of the AHRS current
     // location. This is used for extrapolation when terrain data is
     // temporarily unavailable
     bool have_current_loc_height;
     float last_current_loc_height;
+
+    // true if we have all of the data for the squares around the
+    // current location:
+    bool have_surrounding_tiles;
 
     // next mission command to check
     uint16_t next_mission_index;
@@ -416,6 +455,15 @@ private:
     // status
     enum TerrainStatus system_status = TerrainStatusDisabled;
 
+    // memory allocation status
+    bool memory_alloc_failed;
+
     static AP_Terrain *singleton;
 };
+
+namespace AP {
+    AP_Terrain *terrain();
+};
+
 #endif // AP_TERRAIN_AVAILABLE
+

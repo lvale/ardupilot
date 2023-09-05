@@ -20,7 +20,6 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
-#include <AP_Baro/AP_Baro.h>
 #include <AP_InertialSensor/AP_InertialSensor.h>
 
 class AP_TempCalibration
@@ -37,8 +36,7 @@ public:
     void update(void);
 
     /* Do not allow copies */
-    AP_TempCalibration(const AP_TempCalibration &other) = delete;
-    AP_TempCalibration &operator=(const AP_TempCalibration&) = delete;
+    CLASS_NO_COPY(AP_TempCalibration);
 
     enum {
         TC_DISABLED = 0,

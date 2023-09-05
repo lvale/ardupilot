@@ -17,6 +17,7 @@
  */
 
 #include "SoftSerial.h"
+#include <AP_Math/crc.h>
 #include <stdio.h>
 
 SoftSerial::SoftSerial(uint32_t _baudrate, serial_config _config) :
@@ -26,6 +27,7 @@ SoftSerial::SoftSerial(uint32_t _baudrate, serial_config _config) :
 {
     switch (config) {
     case SERIAL_CONFIG_8N1:
+    case SERIAL_CONFIG_8N1I:
         data_width = 8;
         byte_width = 10;
         stop_mask = 0x200;
@@ -84,7 +86,7 @@ bool SoftSerial::process_pulse(uint32_t width_high, uint32_t width_low, uint8_t 
         }
         if (config == SERIAL_CONFIG_8E2I) {
             // check parity
-            if (__builtin_parity((state.byte>>1)&0xFF) != (state.byte&0x200)>>9) {
+            if (parity((state.byte>>1)&0xFF) != (state.byte&0x200)>>9) {
                 goto reset;
             }
         }

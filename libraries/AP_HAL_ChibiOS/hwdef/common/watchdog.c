@@ -11,7 +11,7 @@
 #define IWDG_BASE             0x58004800
 #elif defined(STM32F7) || defined(STM32F4)
 #define IWDG_BASE             0x40003000
-#elif defined(STM32F1)
+#elif defined(STM32F1) || defined(STM32F3)
 #define IWDG_BASE             0x40003000
 #else
 #error "Unsupported IWDG MCU config"
@@ -29,24 +29,25 @@
 #define WDG_RESET_STATUS (*(__IO uint32_t *)(RCC_BASE + 0xD0))
 #define WDG_RESET_CLEAR (1U<<16)
 #define WDG_RESET_IS_IWDG (1U<<26)
+#define WDG_RESET_IS_SFT (1U<<24)
 #elif defined(STM32F7) || defined(STM32F4)
 #define WDG_RESET_STATUS (*(__IO uint32_t *)(RCC_BASE + 0x74))
 #define WDG_RESET_CLEAR (1U<<24)
 #define WDG_RESET_IS_IWDG (1U<<29)
-#elif defined(STM32F1)
+#define WDG_RESET_IS_SFT (1U<<28)
+#elif defined(STM32F1) || defined(STM32F3)
 #define WDG_RESET_STATUS (*(__IO uint32_t *)(RCC_BASE + 0x24))
 #define WDG_RESET_CLEAR (1U<<24)
 #define WDG_RESET_IS_IWDG (1U<<29)
+#define WDG_RESET_IS_SFT (1U<<28)
+#elif defined(STM32G4) || defined(STM32L4) || defined(STM32L4PLUS)
+#define WDG_RESET_STATUS (*(__IO uint32_t *)(RCC_BASE + 0x94))
+#define WDG_RESET_CLEAR (1U<<23)
+#define WDG_RESET_IS_IWDG (1U<<29)
+#define WDG_RESET_IS_SFT (1U<<28)
 #else
 #error "Unsupported IWDG MCU config"
 #endif
-
-#define WDG_SAFETY_BIT  0x01
-#define WDG_ARMED_BIT   0x02
-
-#define BKP_IDX_FLAGS   0x01
-#define BKP_IDX_HOME    0x02
-#define BKP_IDX_RPY     0x05
 
 typedef struct
 {
@@ -59,9 +60,8 @@ typedef struct
 
 #define IWDGD (*(IWDG_Regs *)(IWDG_BASE))
 
-static bool was_watchdog_reset;
+static uint32_t reset_reason;
 static bool watchdog_enabled;
-static uint32_t boot_backup_state[8];
 
 /*
   setup the watchdog
@@ -92,12 +92,8 @@ void stm32_watchdog_pat(void)
  */
 void stm32_watchdog_save_reason(void)
 {
-    if (WDG_RESET_STATUS & WDG_RESET_IS_IWDG) {
-        was_watchdog_reset = true;
-        uint8_t i;
-        for (i=0; i<sizeof(boot_backup_state)/sizeof(boot_backup_state[0]); i++) {
-            boot_backup_state[i] = get_rtc_backup(i);
-        }
+    if (reset_reason == 0) {
+        reset_reason = WDG_RESET_STATUS;
     }
 }
 
@@ -107,10 +103,6 @@ void stm32_watchdog_save_reason(void)
 void stm32_watchdog_clear_reason(void)
 {
     WDG_RESET_STATUS = WDG_RESET_CLEAR;
-    uint8_t i;
-    for (i=1; i<sizeof(boot_backup_state)/sizeof(boot_backup_state[0]); i++) {
-        set_rtc_backup(i, 0);
-    }
 }
 
 /*
@@ -118,91 +110,31 @@ void stm32_watchdog_clear_reason(void)
  */
 bool stm32_was_watchdog_reset(void)
 {
-    return was_watchdog_reset;
+    stm32_watchdog_save_reason();
+    return (reset_reason & WDG_RESET_IS_IWDG) != 0;
 }
 
 /*
-  set the safety state in backup register
-
-  This is stored so that the safety state can be restored after a
-  watchdog reset
+  return true if reboot was from a software reset
  */
-void stm32_set_backup_safety_state(bool safety_on)
+bool stm32_was_software_reset(void)
 {
-    uint32_t v = get_rtc_backup(BKP_IDX_FLAGS);
-    uint32_t v2 = safety_on?(v | WDG_SAFETY_BIT):(v & ~WDG_SAFETY_BIT);
-    if (v != v2) {
-        set_rtc_backup(BKP_IDX_FLAGS, v2);
-    }
+    stm32_watchdog_save_reason();
+    return (reset_reason & WDG_RESET_IS_SFT) != 0;
 }
 
 /*
-  get the safety state in backup register from initial boot
-*/
-bool stm32_get_boot_backup_safety_state(void)
-{
-    return (boot_backup_state[BKP_IDX_FLAGS] & WDG_SAFETY_BIT) != 0;
-}
-
-/*
-  set the armed state in backup register
-
-  This is stored so that the armed state can be restored after a
-  watchdog reset
+  save persistent watchdog data
  */
-void stm32_set_backup_armed(bool armed)
+void stm32_watchdog_save(const uint32_t *data, uint32_t nwords)
 {
-    uint32_t v = get_rtc_backup(BKP_IDX_FLAGS);
-    uint32_t v2 = armed?(v | WDG_ARMED_BIT): (v & ~WDG_ARMED_BIT);
-    if (v != v2) {
-        set_rtc_backup(BKP_IDX_FLAGS, v2);
-    }
+    set_rtc_backup(1, data, nwords);
 }
 
 /*
-  get the armed state in backup register from initial boot
-*/
-bool stm32_get_boot_backup_armed(void)
-{
-    return (boot_backup_state[BKP_IDX_FLAGS] & WDG_ARMED_BIT) != 0;
-}
-
-/*
-  set home state in backup
+  load persistent watchdog data
  */
-void stm32_set_backup_home(int32_t lat, int32_t lon, int32_t alt_cm)
+void stm32_watchdog_load(uint32_t *data, uint32_t nwords)
 {
-    set_rtc_backup(BKP_IDX_HOME, (uint32_t)lat);
-    set_rtc_backup(BKP_IDX_HOME+1, (uint32_t)lon);
-    set_rtc_backup(BKP_IDX_HOME+2, (uint32_t)alt_cm);
-}
-
-/*
-  get home state from backup
- */
-void stm32_get_backup_home(int32_t *lat, int32_t *lon, int32_t *alt_cm)
-{
-    *lat = (int32_t)boot_backup_state[BKP_IDX_HOME];
-    *lon = (int32_t)boot_backup_state[BKP_IDX_HOME+1];
-    *alt_cm = (int32_t)boot_backup_state[BKP_IDX_HOME+2];
-}
-
-/*
-  set attitude in backup
- */
-void stm32_set_attitude(int32_t roll_cd, int32_t pitch_cd, int32_t yaw_cd)
-{
-    set_rtc_backup(BKP_IDX_RPY, (uint32_t)roll_cd);
-    set_rtc_backup(BKP_IDX_RPY+1, (uint32_t)pitch_cd);
-    set_rtc_backup(BKP_IDX_RPY+2, (uint32_t)yaw_cd);
-}
-
-/*
-  get attitude from backup
- */
-void stm32_get_attitude(int32_t *roll_cd, int32_t *pitch_cd, int32_t *yaw_cd)
-{
-    *roll_cd = (int32_t)boot_backup_state[BKP_IDX_RPY];
-    *pitch_cd = (int32_t)boot_backup_state[BKP_IDX_RPY+1];
-    *yaw_cd = (int32_t)boot_backup_state[BKP_IDX_RPY+2];
+    get_rtc_backup(1, data, nwords);
 }

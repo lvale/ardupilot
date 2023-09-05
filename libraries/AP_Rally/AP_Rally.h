@@ -14,6 +14,12 @@
  */
 #pragma once
 
+#include <AP_HAL/AP_HAL_Boards.h>
+
+#ifndef HAL_RALLY_ENABLED
+#define HAL_RALLY_ENABLED 1
+#endif
+
 #include <AP_Common/AP_Common.h>
 #include <AP_Common/Location.h>
 #include <AP_Param/AP_Param.h>
@@ -36,8 +42,7 @@ public:
     AP_Rally();
 
     /* Do not allow copies */
-    AP_Rally(const AP_Rally &other) = delete;
-    AP_Rally &operator=(const AP_Rally&) = delete;
+    CLASS_NO_COPY(AP_Rally);
 
     // data handling
     bool get_rally_point_with_index(uint8_t i, RallyLocation &ret) const;
@@ -52,13 +57,17 @@ public:
         }
         return (uint8_t)ret;
     }
+    // reduce point count:
+    void truncate(uint8_t num);
+    // append a rally point to the list
+    bool append(const RallyLocation &loc) WARN_IF_UNUSED;
 
     float get_rally_limit_km() const { return _rally_limit_km; }
 
     Location rally_location_to_location(const RallyLocation &ret) const;
 
     // logic handling
-    Location calc_best_rally_or_home_location(const Location &current_loc, float rtl_home_alt) const;
+    Location calc_best_rally_or_home_location(const Location &current_loc, float rtl_home_alt_amsl_cm) const;
     bool find_nearest_rally_point(const Location &myloc, RallyLocation &ret) const;
 
     // last time rally points changed

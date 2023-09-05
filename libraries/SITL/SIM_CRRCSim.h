@@ -18,6 +18,14 @@
 
 #pragma once
 
+#include <AP_HAL/AP_HAL_Boards.h>
+
+#ifndef HAL_SIM_CRRCSIM_ENABLED
+#define HAL_SIM_CRRCSIM_ENABLED (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
+#endif
+
+#if HAL_SIM_CRRCSIM_ENABLED
+
 #include <AP_HAL/utility/Socket.h>
 
 #include "SIM_Aircraft.h"
@@ -29,14 +37,14 @@ namespace SITL {
  */
 class CRRCSim : public Aircraft {
 public:
-    CRRCSim(const char *home_str, const char *frame_str);
+    CRRCSim(const char *frame_str);
 
     /* update model by one time step */
     void update(const struct sitl_input &input) override;
 
     /* static object creator */
-    static Aircraft *create(const char *home_str, const char *frame_str) {
-        return new CRRCSim(home_str, frame_str);
+    static Aircraft *create(const char *frame_str) {
+        return new CRRCSim(frame_str);
     }
 
 private:
@@ -77,3 +85,5 @@ private:
 };
 
 } // namespace SITL
+
+#endif  // HAL_SIM_CRRCSIM_ENABLED
