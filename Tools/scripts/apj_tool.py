@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+
+# flake8: noqa
+
 '''
 tool to manipulate ArduPilot firmware files, changing default parameters
 '''
@@ -232,7 +235,7 @@ if __name__ == '__main__':
     have_defaults = defaults.find()
 
     if not have_defaults and not args.extract:
-        print("Error: Param defaults support not found in firmware")
+        print("Error: Param defaults support not found in firmware; see https://ardupilot.org/copter/docs/common-oem-customizations.html for embedding defaults.parm")
         sys.exit(1)
 
     if have_defaults:

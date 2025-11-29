@@ -1,6 +1,6 @@
 #include "AP_Periph.h"
 
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
 
 /*
   battery support
@@ -27,6 +27,10 @@ void AP_Periph_FW::can_battery_update(void)
 
     const uint8_t battery_instances = battery_lib.num_instances();
     for (uint8_t i=0; i<battery_instances; i++) {
+        if (BIT_IS_SET(g.battery_hide_mask, i)) {
+            // do not transmit this battery
+            continue;
+        }
         if (!battery_lib.healthy(i)) {
             continue;
         }
@@ -50,7 +54,13 @@ void AP_Periph_FW::can_battery_update(void)
             pkt.temperature = C_TO_KELVIN(temperature);
         }
 
+        // Populate state of health
         pkt.state_of_health_pct = UAVCAN_EQUIPMENT_POWER_BATTERYINFO_STATE_OF_HEALTH_UNKNOWN;
+        uint8_t state_of_health_pct = 0;
+        if (battery_lib.get_state_of_health_pct(i, state_of_health_pct)) {
+            pkt.state_of_health_pct = state_of_health_pct;
+        }
+
         uint8_t percentage = 0;
         if (battery_lib.capacity_remaining_pct(percentage, i)) {
             pkt.state_of_charge_pct = percentage;
@@ -63,7 +73,7 @@ void AP_Periph_FW::can_battery_update(void)
         pkt.model_name.len = strnlen((char*)pkt.model_name.data, sizeof(pkt.model_name.data));
 #endif //defined(HAL_PERIPH_BATTERY_SKIP_NAME)
 
-        uint8_t buffer[UAVCAN_EQUIPMENT_POWER_BATTERYINFO_MAX_SIZE] {};
+        uint8_t buffer[UAVCAN_EQUIPMENT_POWER_BATTERYINFO_MAX_SIZE];
         const uint16_t total_size = uavcan_equipment_power_BatteryInfo_encode(&pkt, buffer, !periph.canfdout());
 
         canard_broadcast(UAVCAN_EQUIPMENT_POWER_BATTERYINFO_SIGNATURE,
@@ -71,8 +81,53 @@ void AP_Periph_FW::can_battery_update(void)
                         CANARD_TRANSFER_PRIORITY_LOW,
                         &buffer[0],
                         total_size);
+
+        // Send individual cell information if available
+        if (battery_lib.has_cell_voltages(i)) {
+            can_battery_send_cells(i);
+        }
     }
 }
 
-#endif // HAL_PERIPH_ENABLE_BATTERY
+/*
+  send individual cell voltages if available
+ */
+void AP_Periph_FW::can_battery_send_cells(uint8_t instance)
+{
+    // allocate space for the packet. This is a large
+    // packet that won't fit on the stack, so dynamically allocate
+    auto* pkt = NEW_NOTHROW ardupilot_equipment_power_BatteryInfoAux;
+    uint8_t* buffer = NEW_NOTHROW uint8_t[ARDUPILOT_EQUIPMENT_POWER_BATTERYINFOAUX_MAX_SIZE];
+    if (pkt == nullptr || buffer == nullptr) {
+        delete pkt;
+        delete [] buffer;
+        return;
+    }
+    const auto &cell_voltages = battery_lib.get_cell_voltages(instance);
+			
+    for (uint8_t i = 0; i < ARRAY_SIZE(cell_voltages.cells); i++) {
+        if (cell_voltages.cells[i] == 0xFFFFU) {
+            break;
+        }
+        pkt->voltage_cell.data[i] = cell_voltages.cells[i]*0.001;
+        pkt->voltage_cell.len = i+1;
+    }
+			
+    pkt->max_current = nanf("");
+    pkt->nominal_voltage = nanf("");
 
+    // encode and send message:
+    const uint16_t total_size = ardupilot_equipment_power_BatteryInfoAux_encode(pkt, buffer, !periph.canfdout());
+
+    canard_broadcast(ARDUPILOT_EQUIPMENT_POWER_BATTERYINFOAUX_SIGNATURE,
+                     ARDUPILOT_EQUIPMENT_POWER_BATTERYINFOAUX_ID,
+                     CANARD_TRANSFER_PRIORITY_LOW,
+                     buffer,
+                     total_size);
+
+    // Delete temporary buffers
+    delete pkt;
+    delete [] buffer;
+}
+
+#endif // AP_PERIPH_BATTERY_ENABLED

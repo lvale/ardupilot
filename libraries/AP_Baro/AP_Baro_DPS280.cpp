@@ -20,7 +20,6 @@
 
 #if AP_BARO_DPS280_ENABLED
 
-#include <utility>
 #include <stdio.h>
 #include <AP_Math/definitions.h>
 
@@ -43,35 +42,31 @@ extern const AP_HAL::HAL &hal;
 
 #define TEMPERATURE_LIMIT_C 120
 
-AP_Baro_DPS280::AP_Baro_DPS280(AP_Baro &baro, AP_HAL::OwnPtr<AP_HAL::Device> _dev)
+AP_Baro_DPS280::AP_Baro_DPS280(AP_Baro &baro, AP_HAL::Device &_dev)
     : AP_Baro_Backend(baro)
-    , dev(std::move(_dev))
+    , dev(&_dev)
 {
 }
 
 AP_Baro_Backend *AP_Baro_DPS280::probe(AP_Baro &baro,
-                                       AP_HAL::OwnPtr<AP_HAL::Device> _dev, bool _is_dps310)
+                                       AP_HAL::Device &_dev,
+                                       bool _is_dps310)
 {
-    if (!_dev) {
-        return nullptr;
-    }
-
-    AP_Baro_DPS280 *sensor = new AP_Baro_DPS280(baro, std::move(_dev));
+    AP_Baro_DPS280 *sensor = NEW_NOTHROW AP_Baro_DPS280(baro, _dev);
     if (sensor) {
         sensor->is_dps310 = _is_dps310;
     }
-    if (!sensor || !sensor->init()) {
+    if (!sensor || !sensor->init(_is_dps310)) {
         delete sensor;
         return nullptr;
     }
     return sensor;
 }
 
-AP_Baro_Backend *AP_Baro_DPS310::probe(AP_Baro &baro,
-                                       AP_HAL::OwnPtr<AP_HAL::Device> _dev)
+AP_Baro_Backend *AP_Baro_DPS310::probe(AP_Baro &baro, AP_HAL::Device &_dev)
 {
     // same as DPS280 but with is_dps310 set for temperature fix
-    return AP_Baro_DPS280::probe(baro, std::move(_dev), true);
+    return AP_Baro_DPS280::probe(baro, _dev, true);
 }
 
 /*
@@ -153,7 +148,7 @@ void AP_Baro_DPS280::set_config_registers(void)
     }
 }
 
-bool AP_Baro_DPS280::init()
+bool AP_Baro_DPS280::init(bool _is_dps310)
 {
     if (!dev) {
         return false;
@@ -190,8 +185,11 @@ bool AP_Baro_DPS280::init()
     set_config_registers();
 
     instance = _frontend.register_sensor();
-
-    dev->set_device_type(DEVTYPE_BARO_DPS280);
+    if(_is_dps310) {
+	    dev->set_device_type(DEVTYPE_BARO_DPS310);
+    } else {
+	    dev->set_device_type(DEVTYPE_BARO_DPS280);
+    }
     set_bus_id(instance, dev->get_bus_id());
     
     dev->get_semaphore()->give();
@@ -243,7 +241,7 @@ void AP_Baro_DPS280::check_health(void)
     }
 }
 
-//  acumulate a new sensor reading
+//  accumulate a new sensor reading
 void AP_Baro_DPS280::timer(void)
 {
     uint8_t buf[6];

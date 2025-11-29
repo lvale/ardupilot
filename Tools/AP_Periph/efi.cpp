@@ -1,12 +1,17 @@
 #include "AP_Periph.h"
 
-#ifdef HAL_PERIPH_ENABLE_EFI
+#if AP_PERIPH_EFI_ENABLED
 
 /*
   EFI support
  */
 
 #include <dronecan_msgs.h>
+
+#ifndef AP_PERIPH_EFI_MAX_RATE
+// default to 2x the AP_Vehicle rate
+#define AP_PERIPH_EFI_MAX_RATE 100U
+#endif
 
 /*
   update CAN EFI
@@ -16,6 +21,15 @@ void AP_Periph_FW::can_efi_update(void)
     if (!efi.enabled()) {
         return;
     }
+
+#if AP_PERIPH_EFI_MAX_RATE > 0
+    const uint32_t now_ms = AP_HAL::millis();
+    if (now_ms - last_efi_update_ms < (1000U / AP_PERIPH_EFI_MAX_RATE)) {
+        return;
+    }
+    last_efi_update_ms = now_ms;
+#endif
+
     efi.update();
     const uint32_t update_ms = efi.get_last_update_ms();
     if (!efi.is_healthy() || efi_update_ms == update_ms) {
@@ -179,7 +193,7 @@ void AP_Periph_FW::can_efi_update(void)
         c.exhaust_gas_temperature = state_c.exhaust_gas_temperature;
         c.lambda_coefficient = state_c.lambda_coefficient;
 
-        uint8_t buffer[UAVCAN_EQUIPMENT_ICE_RECIPROCATING_STATUS_MAX_SIZE] {};
+        uint8_t buffer[UAVCAN_EQUIPMENT_ICE_RECIPROCATING_STATUS_MAX_SIZE];
         const uint16_t total_size = uavcan_equipment_ice_reciprocating_Status_encode(&pkt, buffer, !canfdout());
 
         canard_broadcast(UAVCAN_EQUIPMENT_ICE_RECIPROCATING_STATUS_SIGNATURE,
@@ -190,4 +204,4 @@ void AP_Periph_FW::can_efi_update(void)
     }
 }
 
-#endif // HAL_PERIPH_ENABLE_EFI
+#endif // AP_PERIPH_EFI_ENABLED

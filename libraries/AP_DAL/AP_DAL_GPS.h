@@ -9,13 +9,13 @@ public:
 
     /// GPS status codes
     enum GPS_Status : uint8_t {
-        NO_GPS = GPS_FIX_TYPE_NO_GPS,                     ///< No GPS connected/detected
-        NO_FIX = GPS_FIX_TYPE_NO_FIX,                     ///< Receiving valid GPS messages but no lock
-        GPS_OK_FIX_2D = GPS_FIX_TYPE_2D_FIX,              ///< Receiving valid messages and 2D lock
-        GPS_OK_FIX_3D = GPS_FIX_TYPE_3D_FIX,              ///< Receiving valid messages and 3D lock
-        GPS_OK_FIX_3D_DGPS = GPS_FIX_TYPE_DGPS,           ///< Receiving valid messages and 3D lock with differential improvements
-        GPS_OK_FIX_3D_RTK_FLOAT = GPS_FIX_TYPE_RTK_FLOAT, ///< Receiving valid messages and 3D RTK Float
-        GPS_OK_FIX_3D_RTK_FIXED = GPS_FIX_TYPE_RTK_FIXED, ///< Receiving valid messages and 3D RTK Fixed
+        NO_GPS = 0,                     ///< No GPS connected/detected
+        NO_FIX = 1,                     ///< Receiving valid GPS messages but no lock
+        GPS_OK_FIX_2D = 2,              ///< Receiving valid messages and 2D lock
+        GPS_OK_FIX_3D = 3,              ///< Receiving valid messages and 3D lock
+        GPS_OK_FIX_3D_DGPS = 4,           ///< Receiving valid messages and 3D lock with differential improvements
+        GPS_OK_FIX_3D_RTK_FLOAT = 5, ///< Receiving valid messages and 3D RTK Float
+        GPS_OK_FIX_3D_RTK_FIXED = 6, ///< Receiving valid messages and 3D RTK Fixed
     };
 
     AP_DAL_GPS();
@@ -26,7 +26,9 @@ public:
     GPS_Status status() const {
         return status(primary_sensor());
     }
-    const Location &location(uint8_t instance) const;
+    const Location &location(uint8_t instance) const {
+        return tmp_location[instance];
+    }
     bool have_vertical_velocity(uint8_t instance) const {
         return _RGPI[instance].have_vertical_velocity;
     }
@@ -125,6 +127,10 @@ public:
     }
     void handle_message(const log_RGPJ &msg) {
         _RGPJ[msg.instance] = msg;
+
+        tmp_location[msg.instance].lat = msg.lat;
+        tmp_location[msg.instance].lng = msg.lng;
+        tmp_location[msg.instance].alt = msg.alt;
     }
 
 private:
@@ -132,4 +138,6 @@ private:
     struct log_RGPH _RGPH;
     struct log_RGPI _RGPI[GPS_MAX_INSTANCES];
     struct log_RGPJ _RGPJ[GPS_MAX_INSTANCES];
+
+    Location tmp_location[GPS_MAX_INSTANCES];
 };

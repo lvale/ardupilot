@@ -20,7 +20,7 @@
 #if HAL_PICCOLO_CAN_ENABLE
 
 /*
- * Decode a recevied CAN frame.
+ * Decode a received CAN frame.
  * It is assumed at this point that the received frame is intended for *this* ESC
  */
 bool AP_PiccoloCAN_ESC::handle_can_frame(AP_HAL::CANFrame &frame)
@@ -121,9 +121,9 @@ void finishESCVelocityPacket(void* pkt, int size, uint32_t packetID)
      * Note: The Device ID (lower 8 bits of the frame ID) will have to be inserted later
      */
 
-    uint32_t id = (((uint8_t) PiccoloCAN_MessageGroup::ACTUATOR) << 24) |       // CAN Group ID
-                  ((packetID & 0xFF) << 16) |                                       // Message ID
-                  (((uint8_t) PiccoloCAN_ActuatorType::ESC) << 8);              // Actuator type
+    uint32_t id = (((uint8_t) PiccoloCAN_MessageGroup::ACTUATOR) << 24) |   // CAN Group ID
+                  ((packetID & 0xFF) << 16) |                               // Message ID
+                  (((uint8_t) PiccoloCAN_DeviceType::ESC) << 8);            // Actuator type
 
     // Extended frame format
     id |= AP_HAL::CANFrame::FlagEFF;

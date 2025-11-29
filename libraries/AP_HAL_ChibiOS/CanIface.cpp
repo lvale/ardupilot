@@ -84,7 +84,7 @@
 #endif
 
 
-extern AP_HAL::HAL& hal;
+extern const AP_HAL::HAL& hal;
 
 using namespace ChibiOS;
 
@@ -140,9 +140,9 @@ const uint32_t CANIface::TSR_ABRQx[CANIface::NumTxMailboxes] = {
 
 
 CANIface::CANIface(uint8_t index) :
-    self_index_(index),
     rx_bytebuffer_((uint8_t*)rx_buffer, sizeof(rx_buffer)),
-    rx_queue_(&rx_bytebuffer_)
+    rx_queue_(&rx_bytebuffer_),
+    self_index_(index)
 {
     if (index >= HAL_NUM_CAN_IFACES) {
         AP_HAL::panic("Bad CANIface index.");
@@ -292,6 +292,7 @@ int16_t CANIface::send(const AP_HAL::CANFrame& frame, uint64_t tx_deadline,
     if (frame.isErrorFrame() || frame.dlc > 8) {
         return -1;
     }
+    PERF_STATS(stats.tx_requests);
 
     /*
      * Normally we should perform the same check as in @ref canAcceptNewTxFrame(), because
@@ -323,7 +324,20 @@ int16_t CANIface::send(const AP_HAL::CANFrame& frame, uint64_t tx_deadline,
         } else if ((can_->TSR & bxcan::TSR_TME2) == bxcan::TSR_TME2) {
             txmailbox = 2;
         } else {
-            PERF_STATS(stats.tx_rejected);
+            PERF_STATS(stats.tx_overflow);
+#if !defined(HAL_BOOTLOADER_BUILD)
+            if (stats.tx_success == 0) {
+                /*
+                  if we have never successfully transmitted a frame
+                  then we may be operating with just MAVCAN or UDP
+                  MCAST. Consider the frame sent if the send
+                  succeeds. This allows for UDP MCAST and MAVCAN to
+                  operate fully when the CAN bus has no cable plugged
+                  in
+                 */
+                return AP_HAL::CANIface::send(frame, tx_deadline, flags);
+            }
+#endif
             return 0;       // No transmission for you.
         }
 
@@ -381,86 +395,6 @@ int16_t CANIface::receive(AP_HAL::CANFrame& out_frame, uint64_t& out_timestamp_u
 
     return AP_HAL::CANIface::receive(out_frame, out_timestamp_us, out_flags);
 }
-
-#if !defined(HAL_BOOTLOADER_BUILD)
-bool CANIface::configureFilters(const CanFilterConfig* filter_configs,
-                                uint16_t num_configs)
-{
-#if !defined(HAL_BUILD_AP_PERIPH)
-    // only do filtering for AP_Periph
-    can_->FMR &= ~bxcan::FMR_FINIT;
-    return true;
-#else
-    if (mode_ != FilteredMode) {
-        return false;
-    }
-    if (num_configs <= NumFilters && filter_configs != nullptr) {
-        CriticalSectionLocker lock;
-
-        can_->FMR |= bxcan::FMR_FINIT;
-
-        // Slave (CAN2) gets half of the filters
-        can_->FMR &= ~0x00003F00UL;
-        can_->FMR |= static_cast<uint32_t>(NumFilters) << 8;
-
-        can_->FFA1R = 0x0AAAAAAA; // FIFO's are interleaved between filters
-        can_->FM1R = 0; // Identifier Mask mode
-        can_->FS1R = 0x7ffffff; // Single 32-bit for all
-
-        const uint8_t filter_start_index = (self_index_ == 0) ? 0 : NumFilters;
-
-        if (num_configs == 0) {
-            can_->FilterRegister[filter_start_index].FR1 = 0;
-            can_->FilterRegister[filter_start_index].FR2 = 0;
-            can_->FA1R = 1 << filter_start_index;
-        } else {
-            for (uint8_t i = 0; i < NumFilters; i++) {
-                if (i < num_configs) {
-                    uint32_t id   = 0;
-                    uint32_t mask = 0;
-
-                    const CanFilterConfig* const cfg = filter_configs + i;
-
-                    if ((cfg->id & AP_HAL::CANFrame::FlagEFF) || !(cfg->mask & AP_HAL::CANFrame::FlagEFF)) {
-                        id   = (cfg->id   & AP_HAL::CANFrame::MaskExtID) << 3;
-                        mask = (cfg->mask & AP_HAL::CANFrame::MaskExtID) << 3;
-                        id |= bxcan::RIR_IDE;
-                    } else {
-                        id   = (cfg->id   & AP_HAL::CANFrame::MaskStdID) << 21;  // Regular std frames, nothing fancy.
-                        mask = (cfg->mask & AP_HAL::CANFrame::MaskStdID) << 21;  // Boring.
-                    }
-
-                    if (cfg->id & AP_HAL::CANFrame::FlagRTR) {
-                        id |= bxcan::RIR_RTR;
-                    }
-
-                    if (cfg->mask & AP_HAL::CANFrame::FlagEFF) {
-                        mask |= bxcan::RIR_IDE;
-                    }
-
-                    if (cfg->mask & AP_HAL::CANFrame::FlagRTR) {
-                        mask |= bxcan::RIR_RTR;
-                    }
-
-                    can_->FilterRegister[filter_start_index + i].FR1 = id;
-                    can_->FilterRegister[filter_start_index + i].FR2 = mask;
-
-                    can_->FA1R |= (1 << (filter_start_index + i));
-                } else {
-                    can_->FA1R &= ~(1 << (filter_start_index + i));
-                }
-            }
-        }
-
-        can_->FMR &= ~bxcan::FMR_FINIT;
-
-        return true;
-    }
-
-    return false;
-#endif // AP_Periph
-}
-#endif
 
 bool CANIface::waitMsrINakBitStateChange(bool target_state)
 {
@@ -521,12 +455,11 @@ void CANIface::handleTxInterrupt(const uint64_t utc_usec)
         handleTxMailboxInterrupt(2, txok, utc_usec);
     }
 
-#if CH_CFG_USE_EVENTS == TRUE
-    if (event_handle_ != nullptr) {
+    if (sem_handle != nullptr) {
         PERF_STATS(stats.num_events);
-        evt_src_.signalI(1 << self_index_);
+        sem_handle->signal_ISR();
     }
-#endif
+
     pollErrorFlagsFromISR();
 }
 
@@ -589,12 +522,11 @@ void CANIface::handleRxInterrupt(uint8_t fifo_index, uint64_t timestamp_us)
 
     had_activity_ = true;
 
-#if CH_CFG_USE_EVENTS == TRUE
-    if (event_handle_ != nullptr) {
+    if (sem_handle != nullptr) {
         PERF_STATS(stats.num_events);
-        evt_src_.signalI(1 << self_index_);
+        sem_handle->signal_ISR();
     }
-#endif
+
     pollErrorFlagsFromISR();
 }
 
@@ -701,17 +633,12 @@ uint32_t CANIface::getErrorCount() const
 
 #endif // #if !defined(HAL_BUILD_AP_PERIPH) && !defined(HAL_BOOTLOADER_BUILD)
 
-#if CH_CFG_USE_EVENTS == TRUE
-ChibiOS::EventSource CANIface::evt_src_;
-bool CANIface::set_event_handle(AP_HAL::EventHandle* handle)
+bool CANIface::set_event_handle(AP_HAL::BinarySemaphore *handle)
 {
-    CriticalSectionLocker lock;
-    event_handle_ = handle;
-    event_handle_->set_source(&evt_src_);
-    return event_handle_->register_event(1 << self_index_);
+    sem_handle = handle;
+    return true;
 }
 
-#endif // #if CH_CFG_USE_EVENTS == TRUE
 
 void CANIface::checkAvailable(bool& read, bool& write, const AP_HAL::CANFrame* pending_tx) const
 {
@@ -744,13 +671,13 @@ bool CANIface::select(bool &read, bool &write,
         return true;
     }
 
-#if CH_CFG_USE_EVENTS == TRUE
+#if !defined(HAL_BUILD_AP_PERIPH) && !defined(HAL_BOOTLOADER_BUILD)
     // we don't support blocking select in AP_Periph and bootloader
     while (time < blocking_deadline) {
-        if (event_handle_ == nullptr) {
+        if (sem_handle == nullptr) {
             break;
         }
-        event_handle_->wait(blocking_deadline - time); // Block until timeout expires or any iface updates
+        IGNORE_RETURN(sem_handle->wait(blocking_deadline - time)); // Block until timeout expires or any iface updates
         checkAvailable(read, write, pending_tx);  // Check what we got
         if ((read && in_read) || (write && in_write)) {
             return true;
@@ -835,9 +762,9 @@ void CANIface::initOnce(bool enable_irq)
     }
 }
 
-bool CANIface::init(const uint32_t bitrate, const CANIface::OperatingMode mode)
+bool CANIface::init(const uint32_t bitrate)
 {
-    Debug("Bitrate %lu mode %d", static_cast<unsigned long>(bitrate), static_cast<int>(mode));
+    Debug("Bitrate %lu", static_cast<unsigned long>(bitrate));
     if (self_index_ > HAL_NUM_CAN_IFACES) {
         Debug("CAN drv init failed");
         return false;
@@ -845,15 +772,14 @@ bool CANIface::init(const uint32_t bitrate, const CANIface::OperatingMode mode)
     if (can_ifaces[self_index_] == nullptr) {
         can_ifaces[self_index_] = this;
 #if !defined(HAL_BOOTLOADER_BUILD)
-        hal.can[self_index_] = this;
+        AP_HAL::get_HAL_mutable().can[self_index_] = this;
 #endif
     }
 
     bitrate_ = bitrate;
-    mode_ = mode;
 
     if (can_ifaces[0] == nullptr) {
-        can_ifaces[0] = new CANIface(0);
+        can_ifaces[0] = NEW_NOTHROW CANIface(0);
         Debug("Failed to allocate CAN iface 0");
         if (can_ifaces[0] == nullptr) {
             return false;
@@ -864,7 +790,7 @@ bool CANIface::init(const uint32_t bitrate, const CANIface::OperatingMode mode)
         Debug("Enabling CAN iface 0");
         can_ifaces[0]->initOnce(false);
         Debug("Initing iface 0...");
-        if (!can_ifaces[0]->init(bitrate, mode)) {
+        if (!can_ifaces[0]->init(bitrate)) {
             Debug("Iface 0 init failed");
             return false;
         }
@@ -919,8 +845,7 @@ bool CANIface::init(const uint32_t bitrate, const CANIface::OperatingMode mode)
     can_->BTR = ((timings.sjw & 3U)  << 24) |
                 ((timings.bs1 & 15U) << 16) |
                 ((timings.bs2 & 7U)  << 20) |
-                (timings.prescaler & 1023U) |
-                ((mode == SilentMode) ? bxcan::BTR_SILM : 0);
+                (timings.prescaler & 1023U);
 
     can_->IER = bxcan::IER_TMEIE |   // TX mailbox empty
                 bxcan::IER_FMPIE0 |  // RX FIFO 0 is not empty

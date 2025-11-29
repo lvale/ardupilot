@@ -9,7 +9,7 @@ ifeq ($(USE_OPT),)
 endif
 
 ifeq ($(ENABLE_DEBUG_SYMBOLS), yes)
-  USE_OPT += -g
+  USE_OPT += -g3
 endif
 
 # C specific options here (added to USE_OPT).
@@ -66,10 +66,6 @@ endif
 include $(CHIBIOS)/os/various/cpp_wrappers/chcpp.mk
 ifeq ($(USE_FATFS),yes)
 include $(CHIBIOS)/os/various/fatfs_bindings/fatfs.mk
-endif
-
-ifeq ($(USE_LWIP),yes)
-include $(CHIBIOS)/os/various/lwip_bindings/lwip.mk
 endif
 
 #
@@ -133,24 +129,21 @@ endif
 CSRC = $(sort $(ALLCSRC))
 
 CSRC += $(HWDEF)/common/stubs.c \
-	   $(HWDEF)/common/board.c \
-	   $(HWDEF)/common/usbcfg.c \
-	   $(HWDEF)/common/usbcfg_dualcdc.c \
-	   $(HWDEF)/common/usbcfg_common.c \
-	   $(HWDEF)/common/flash.c \
-	   $(HWDEF)/common/malloc.c \
-	   $(HWDEF)/common/hrt.c \
-       $(HWDEF)/common/stm32_util.c \
-       $(HWDEF)/common/bouncebuffer.c \
-       $(HWDEF)/common/watchdog.c
+        $(HWDEF)/common/board.c \
+        $(HWDEF)/common/usbcfg.c \
+        $(HWDEF)/common/usbcfg_dualcdc.c \
+        $(HWDEF)/common/usbcfg_common.c \
+        $(HWDEF)/common/flash.c \
+        $(HWDEF)/common/malloc.c \
+        $(HWDEF)/common/hrt.c \
+        $(HWDEF)/common/stm32_util.c \
+        $(HWDEF)/common/bouncebuffer.c \
+        $(HWDEF)/common/watchdog.c \
+        $(HWDEF)/common/sysperf.c
 
 ifeq ($(USE_USB_MSD),yes)
 CSRC += $(CHIBIOS)/os/various/scsi_bindings/lib_scsi.c \
         $(CHIBIOS)/os/hal/src/hal_usb_msd.c
-endif
-
-ifeq ($(USE_LWIP),yes)
-CSRC += $(CHIBIOS)/os/various/evtimer.c
 endif
 
 #	   $(TESTSRC) \

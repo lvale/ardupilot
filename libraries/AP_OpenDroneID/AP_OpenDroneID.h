@@ -27,13 +27,7 @@
 
 #pragma once
 
-#include <AP_HAL/AP_HAL_Boards.h>
 #include "AP_OpenDroneID_config.h"
-
-#ifndef AP_OPENDRONEID_ENABLED
-// default to off. Enabled in hwdef.dat
-#define AP_OPENDRONEID_ENABLED 0
-#endif
 
 #if AP_OPENDRONEID_ENABLED
 
@@ -117,9 +111,9 @@ private:
     char id_type[3];
     size_t id_len;
     char id_str[21];
-
+    bool bootloader_flashed;
     enum Options : int16_t {
-        EnforceArming     = (1U << 0U),
+        EnforcePreArmChecks = (1U << 0U),
         AllowNonGPSPosition = (1U << 1U),
         LockUASIDOnFirstBasicIDRx = (1U << 2U),
     };

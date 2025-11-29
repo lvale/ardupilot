@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 '''
 Run a mission in SITL
@@ -6,15 +6,17 @@ Run a mission in SITL
 AP_FLAKE8_CLEAN
 '''
 
-import common
 import os
-import sys
-import argparse
 
-from pysim import util
+os.environ['MAVLINK20'] = '1'
+
+import vehicle_test_suite  # noqa:E402
+import sys  # noqa:E402
+import argparse  # noqa:E402
+from pysim import util  # noqa:E402
 
 
-class RunMission(common.AutoTest):
+class RunMission(vehicle_test_suite.TestSuite):
     def __init__(self, vehicle_binary, model, mission_filepath, speedup=None, sim_rate_hz=None):
         super(RunMission, self).__init__(vehicle_binary)
         self.mission_filepath = mission_filepath

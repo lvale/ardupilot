@@ -1,4 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
+
+# flake8: noqa
 
 """
 script to build all of our bootloaders using AP_Bootloader and put the resulting binaries in Tools/bootloaders
@@ -9,13 +11,15 @@ import shutil
 import subprocess
 import sys
 import fnmatch
+import re
 
 # get command line arguments
 from argparse import ArgumentParser
 parser = ArgumentParser(description='make_secure_bl')
 parser.add_argument("--signing-key", type=str, default=None, help="signing key for secure bootloader")
 parser.add_argument("--debug", action='store_true', default=False, help="build with debug symbols")
-parser.add_argument("pattern", type=str, default='*', help="board wildcard pattern")
+parser.add_argument("--periph-only", action='store_true', default=False, help="only build AP_Periph boards")
+parser.add_argument("pattern", type=str, default='*', help="board wildcard pattern", nargs='?')
 args = parser.parse_args()
 
 if args.signing_key is not None and os.path.basename(args.signing_key).lower().find("private") != -1:
@@ -27,13 +31,42 @@ os.environ['PYTHONUNBUFFERED'] = '1'
 
 failed_boards = set()
 
+def has_hwdef_bl(board):
+    """Return True if libraries/AP_HAL_ChibiOS/hwdef/<board>/hwdef-bl.dat exists"""
+    hwdef = os.path.join('libraries', 'AP_HAL_ChibiOS', 'hwdef', board, 'hwdef-bl.dat')
+    return os.path.exists(hwdef)
+
+
+def read_hwdef(filepath):
+    '''read a hwdef file recursively'''
+    fh = open(filepath)
+    ret = []
+    text = fh.readlines()
+    for line in text:
+        m = re.match(r"^\s*include\s+(.+)\s*$", line)
+        if m is not None:
+            ret += read_hwdef(os.path.join(os.path.dirname(filepath), m.group(1)))
+        else:
+            ret += [line]
+    return ret
+
+def is_ap_periph(hwdef):
+    '''return True if a hwdef is for a AP_Periph board'''
+    lines = read_hwdef(hwdef)
+    for line in lines:
+        if line.find('AP_PERIPH') != -1:
+            return True
+    return False
+
 def get_board_list():
-    '''add boards based on existance of hwdef-bl.dat in subdirectories for ChibiOS'''
+    '''add boards based on existence of hwdef-bl.dat in subdirectories for ChibiOS'''
     board_list = []
     dirname, dirlist, filenames = next(os.walk('libraries/AP_HAL_ChibiOS/hwdef'))
     for d in dirlist:
         hwdef = os.path.join(dirname, d, 'hwdef-bl.dat')
         if os.path.exists(hwdef):
+            if args.periph_only and not is_ap_periph(hwdef):
+                continue
             board_list.append(d)
     return board_list
 
@@ -45,7 +78,13 @@ def run_program(cmd_list):
         return False
     return True
 
+
 def build_board(board):
+    # do not attempt to build a bootloader for boards without hwdef-bl.dat
+    if not has_hwdef_bl(board):
+        print(f"Skipping {board}: no hwdef-bl.dat (no bootloader for this board)")
+        return True  # treat as success, since there is nothing to build
+
     configure_args = "--board %s --bootloader --no-submodule-update --Werror" % board
     configure_args = configure_args.split()
     if args.signing_key is not None:
@@ -62,8 +101,34 @@ def build_board(board):
         return False
     return True
 
-for board in get_board_list():
+board_list = get_board_list()
+def get_all_board_dirs():
+    dirname, dirlist, filenames = next(os.walk('libraries/AP_HAL_ChibiOS/hwdef'))
+    return dirlist
+
+all_board_dirs = get_all_board_dirs()
+
+# Determine pattern matches against *all* directories and against buildable boards
+matches_all = [b for b in all_board_dirs if fnmatch.fnmatch(b, args.pattern)]
+matches_buildable = [b for b in board_list if fnmatch.fnmatch(b, args.pattern)]
+
+# If nothing matches any directory name at all, warn once
+if args.pattern != '*' and not matches_all:
+    print(f"Warning: no board matches pattern '{args.pattern}'. Continuing.")
+
+# For directories that match the pattern but *aren't* buildable (no hwdef-bl.dat),
+# print the explicit skip message now so users see why their requested board didn't build.
+for b in matches_all:
+    if b not in board_list:
+        print(f"Skipping {b}: no hwdef-bl.dat (no bootloader for this board)")
+
+
+# check that the user-supplied board pattern matches something; if not, warn and exit
+for board in board_list:
     if not fnmatch.fnmatch(board, args.pattern):
+        continue
+    if not has_hwdef_bl(board):
+        print(f"Skipping {board}: no hwdef-bl.dat (no bootloader for this board)")
         continue
     print("Building for %s" % board)
     if not build_board(board):

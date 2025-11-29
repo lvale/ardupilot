@@ -16,15 +16,13 @@
 #if AP_BARO_ICP201XX_ENABLED
 
 #include <AP_HAL/AP_HAL.h>
-#include <AP_HAL/I2CDevice.h>
-#include <utility>
+#include <AP_HAL/Device.h>
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
 
-#include <utility>
 #include <stdio.h>
 
 #include <AP_Math/AP_Math.h>
@@ -75,19 +73,15 @@ extern const AP_HAL::HAL &hal;
 /*
   constructor
  */
-AP_Baro_ICP201XX::AP_Baro_ICP201XX(AP_Baro &baro, AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev)
+AP_Baro_ICP201XX::AP_Baro_ICP201XX(AP_Baro &baro, AP_HAL::Device &_dev)
     : AP_Baro_Backend(baro)
-    , dev(std::move(_dev))
+    , dev(&_dev)
 {
 }
 
-AP_Baro_Backend *AP_Baro_ICP201XX::probe(AP_Baro &baro,
-                                         AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev)
+AP_Baro_Backend *AP_Baro_ICP201XX::probe(AP_Baro &baro, AP_HAL::Device &dev)
 {
-    if (!dev) {
-        return nullptr;
-    }
-    AP_Baro_ICP201XX *sensor = new AP_Baro_ICP201XX(baro, std::move(dev));
+    AP_Baro_ICP201XX *sensor = NEW_NOTHROW AP_Baro_ICP201XX(baro, dev);
     if (!sensor || !sensor->init()) {
         delete sensor;
         return nullptr;
@@ -105,6 +99,7 @@ bool AP_Baro_ICP201XX::init()
 
     uint8_t id = 0xFF;
     uint8_t ver = 0xFF;
+    read_reg(REG_DEVICE_ID, &id);
     read_reg(REG_DEVICE_ID, &id);
     read_reg(REG_VERSION, &ver);
 

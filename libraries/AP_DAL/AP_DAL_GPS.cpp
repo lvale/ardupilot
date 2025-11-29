@@ -3,8 +3,16 @@
 #include <AP_Logger/AP_Logger.h>
 #include "AP_DAL.h"
 
-// we use a static here as the "location" accessor wants to be const
-static Location tmp_location[GPS_MAX_INSTANCES];
+#if HAL_MAVLINK_BINDINGS_ENABLED
+// ensuring GPS_STATUS enumweration is 1:1 with mavlink when bindings are available
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::NO_GPS == (uint32_t)GPS_FIX_TYPE_NO_GPS, "NO_GPS incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::NO_FIX == (uint32_t)GPS_FIX_TYPE_NO_FIX, "NO_FIX incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::GPS_OK_FIX_2D == (uint32_t)GPS_FIX_TYPE_2D_FIX, "FIX_2D incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::GPS_OK_FIX_3D == (uint32_t)GPS_FIX_TYPE_3D_FIX, "FIX_3D incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::GPS_OK_FIX_3D_DGPS == (uint32_t)GPS_FIX_TYPE_DGPS, "FIX_DGPS incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::GPS_OK_FIX_3D_RTK_FLOAT == (uint32_t)GPS_FIX_TYPE_RTK_FLOAT, "FIX_RTK_FLOAT incorrect");
+static_assert((uint32_t)AP_DAL_GPS::GPS_Status::GPS_OK_FIX_3D_RTK_FIXED == (uint32_t)GPS_FIX_TYPE_RTK_FIXED, "FIX_RTK_FIXED incorrect");
+#endif // HAL_MAVLINK_BINDINGS_ENABLED
 
 AP_DAL_GPS::AP_DAL_GPS()
 {
@@ -12,15 +20,6 @@ AP_DAL_GPS::AP_DAL_GPS()
         _RGPI[i].instance = i;
         _RGPJ[i].instance = i;
     }
-}
-
-const Location &AP_DAL_GPS::location(uint8_t instance) const
-{
-    Location &loc = tmp_location[instance];
-    loc.lat = _RGPJ[instance].lat;
-    loc.lng = _RGPJ[instance].lng;
-    loc.alt = _RGPJ[instance].alt;
-    return loc;
 }
 
 void AP_DAL_GPS::start_frame()
@@ -61,5 +60,12 @@ void AP_DAL_GPS::start_frame()
 
         WRITE_REPLAY_BLOCK_IFCHANGED(RGPI, RGPI, old_RGPI);
         WRITE_REPLAY_BLOCK_IFCHANGED(RGPJ, RGPJ, old_RGPJ);
+
+        tmp_location[i] = {
+            RGPJ.lat,
+            RGPJ.lng,
+            RGPJ.alt,
+            Location::AltFrame::ABSOLUTE
+        };
     }
 }
